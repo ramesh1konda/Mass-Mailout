@@ -1,0 +1,7 @@
+{
+  "name": "MassMailer Pro",
+  "description": "A professional mass mailing campaign manager with AI-powered template generation, multi-document attachments, and CSV recipient list processing.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
