@@ -621,7 +621,7 @@ const App: React.FC = () => {
         )}
       </main>
       <footer className="mt-16 mb-8 text-center text-slate-400 text-xs font-medium">
-        <p>MassMailer Pro v1.4 &bull; Gemini 2.5 Real-time Engine &bull; SMTP Delivery</p>
+        <p>MassMailer Pro v1.4</p>
       </footer>
     </div>
   );
