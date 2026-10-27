@@ -21,6 +21,8 @@ export interface SentEmail {
   personalizedBody: string;
   attachments: { name: string; base64: string }[];
   sentAt: number;
+  status: 'sent' | 'dry-run' | 'failed';
+  error?: string;
 }
 
 export interface SentCampaign {

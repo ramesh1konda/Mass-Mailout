@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Campaign, Recipient, Attachment, Step, SentCampaign, SentEmail } from './types';
 import { generateEmailTemplate } from './services/geminiService';
 import CampaignSteps from './components/CampaignSteps';
+import { parseCsv } from './utils/csv';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, Blob } from '@google/genai';
 
 // Audio Helpers as per guidelines
@@ -65,6 +66,8 @@ const App: React.FC = () => {
   const [isSendingSingle, setIsSendingSingle] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
   const [transmissionLog, setTransmissionLog] = useState<string[]>([]);
+  // null = mail server not reachable
+  const [mailServer, setMailServer] = useState<{ sendEnabled: boolean; from: string | null } | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Live API State
@@ -83,6 +86,32 @@ const App: React.FC = () => {
       logEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [transmissionLog]);
+
+  useEffect(() => {
+    fetch('/api/status').then(r => r.ok ? r.json() : null).then(setMailServer).catch(() => setMailServer(null));
+  }, []);
+
+  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>): Promise<SentEmail> => {
+    try {
+      const res = await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: email.personalizedBody, attachments: email.attachments }),
+      });
+      const data = await res.json().catch(() => ({ status: 'failed', error: `HTTP ${res.status}` }));
+      return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, sentAt: Date.now() };
+    } catch (err: any) {
+      return { ...email, status: 'failed', error: err?.message || 'Mail server unreachable', sentAt: Date.now() };
+    }
+  };
+
+  const logResult = (e: SentEmail) =>
+    e.status === 'sent' ? `[SENT] ${e.recipientEmail}`
+    : e.status === 'dry-run' ? `[DRY RUN] ${e.recipientEmail} (not sent)`
+    : `[FAILED] ${e.recipientEmail}: ${e.error}`;
+
+  const confirmRealSend = (count: number) =>
+    !mailServer?.sendEnabled || window.confirm(`This will send REAL email to ${count} recipient(s) from ${mailServer.from}. Continue?`);
 
   // Database Storage Helpers
   const fileToBase64 = (file: File): Promise<string> => {
@@ -296,14 +325,14 @@ const App: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(line => line.trim());
-      if (lines.length < 2) return;
-      const rawHeaders = lines[0].split(',').map(h => h.trim());
+      const rows = parseCsv(text.replace(/^\uFEFF/, ''));
+      if (rows.length < 2) return;
+      const rawHeaders = rows[0].map(h => h.trim());
       const cleanHeaders = rawHeaders.map(h => h.toLowerCase().replace(/\s+/g, '_'));
       const emailIdx = cleanHeaders.findIndex(h => h.includes('email'));
       if (emailIdx === -1) { alert("Email column not found."); return; }
-      const newRecipients: Recipient[] = lines.slice(1).map((line) => {
-        const values = line.split(',').map(v => v.trim());
+      const newRecipients: Recipient[] = rows.slice(1).map((row) => {
+        const values = row.map(v => v.trim());
         const data: any = { id: crypto.randomUUID() };
         rawHeaders.forEach((rawH, i) => { data[cleanHeaders[i]] = values[i] || ''; data[rawH] = values[i] || ''; });
         data.email = values[emailIdx];
@@ -311,7 +340,16 @@ const App: React.FC = () => {
         data.name = nameIdx !== -1 ? values[nameIdx] : values[emailIdx];
         return data as Recipient;
       });
-      setCampaign(prev => ({ ...prev, recipients: newRecipients, headers: Array.from(new Set([...rawHeaders, ...cleanHeaders])) }));
+      // Drop invalid and duplicate addresses so nobody is emailed twice
+      const seen = new Set<string>();
+      const valid = newRecipients.filter(r => {
+        const key = (r.email || '').toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key) || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (valid.length < newRecipients.length) alert(`Skipped ${newRecipients.length - valid.length} row(s) with an invalid or duplicate email.`);
+      setCampaign(prev => ({ ...prev, recipients: valid, headers: Array.from(new Set([...rawHeaders, ...cleanHeaders])) }));
     };
     reader.readAsText(file);
   };
@@ -326,8 +364,9 @@ const App: React.FC = () => {
 
   const handleSendSingle = async () => {
     if (campaign.recipients.length === 0) return;
+    if (!confirmRealSend(1)) return;
     setIsSendingSingle(true);
-    setTransmissionLog(["[SYSTEM] Initiating Single Real-time Send..."]);
+    setTransmissionLog([`[SYSTEM] Test send (${mailServer?.sendEnabled ? 'LIVE' : 'dry run'})...`]);
     
     try {
       const recipient = campaign.recipients[0];
@@ -336,20 +375,16 @@ const App: React.FC = () => {
       );
 
       setTransmissionLog(prev => [...prev, `[PACKET] Encoding ${processedAttachments.length} attachments...`]);
-      await new Promise(r => setTimeout(r, 600));
 
-      const generatedEmail: SentEmail = {
+      const generatedEmail = await deliver({
         id: crypto.randomUUID(),
         recipientEmail: recipient.email,
         personalizedSubject: personalize(campaign.subject, recipient),
         personalizedBody: personalize(campaign.body, recipient),
         attachments: processedAttachments,
         sentAt: Date.now()
-      };
-
-      setTransmissionLog(prev => [...prev, `[TRANS] Transmitting payload to ${recipient.email}...`]);
-      await new Promise(r => setTimeout(r, 800));
-      setTransmissionLog(prev => [...prev, `[SUCCESS] Payload delivered successfully.`]);
+      });
+      setTransmissionLog(prev => [...prev, logResult(generatedEmail)]);
 
       setSentCampaigns(prev => [{ id: crypto.randomUUID(), name: `${campaign.name} (Single)`, emails: [generatedEmail], totalRecipients: 1, createdAt: Date.now() }, ...prev]);
       
@@ -359,8 +394,9 @@ const App: React.FC = () => {
 
   const startSending = async () => {
     if (campaign.recipients.length === 0 || isSending) return;
+    if (!confirmRealSend(campaign.recipients.length)) return;
     setIsSending(true);
-    setTransmissionLog([`[SYSTEM] Real-time Batch Launch: ${campaign.recipients.length} targets.`]);
+    setTransmissionLog([`[SYSTEM] Batch launch (${mailServer?.sendEnabled ? 'LIVE' : 'dry run'}): ${campaign.recipients.length} targets.`]);
     
     try {
       const processedAttachments = await Promise.all(
@@ -374,26 +410,25 @@ const App: React.FC = () => {
         const progress = Math.round(((i + 1) / campaign.recipients.length) * 100);
         
         setTransmissionLog(prev => [...prev, `[QUEUED] Personalizing for ${recipient.email}...`]);
-        await new Promise(r => setTimeout(r, 150));
-        
-        const email: SentEmail = {
+
+        const email = await deliver({
           id: crypto.randomUUID(),
           recipientEmail: recipient.email,
           personalizedSubject: personalize(campaign.subject, recipient),
           personalizedBody: personalize(campaign.body, recipient),
           attachments: processedAttachments,
           sentAt: Date.now()
-        };
-        
+        });
+
         generatedEmails.push(email);
         setSendProgress(progress);
-        setTransmissionLog(prev => [...prev, `[SENT] ${recipient.email} - Status: 200 OK`]);
-        await new Promise(r => setTimeout(r, 200));
+        setTransmissionLog(prev => [...prev, logResult(email)]);
       }
 
       setSentCampaigns(prev => [{ id: campaign.id, name: campaign.name, emails: generatedEmails, totalRecipients: generatedEmails.length, createdAt: Date.now() }, ...prev]);
       setCampaign(prev => ({ ...prev, status: 'completed' }));
-      setTransmissionLog(prev => [...prev, `[SYSTEM] Batch complete. All records committed to database.`]);
+      const count = (s: SentEmail['status']) => generatedEmails.filter(e => e.status === s).length;
+      setTransmissionLog(prev => [...prev, `[SYSTEM] Batch complete: ${count('sent')} sent, ${count('dry-run')} dry run, ${count('failed')} failed.`]);
       
       setTimeout(() => { setIsSending(false); setSendProgress(0); setView('history'); }, 1500);
     } catch (err) { setIsSending(false); }
@@ -516,9 +551,17 @@ const App: React.FC = () => {
                     <h2 className="text-2xl font-bold text-slate-800">Final Review</h2>
                     {campaign.recipients.length > 0 && !isSending && (
                       <button onClick={handleSendSingle} className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all flex items-center gap-2">
-                        <i className={`fas ${isSendingSingle ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i> {isSendingSingle ? 'Processing...' : `Test Sent to ${campaign.recipients[0].email}`}
+                        <i className={`fas ${isSendingSingle ? 'fa-spinner fa-spin' : 'fa-paper-plane'}`}></i> {isSendingSingle ? 'Processing...' : `Test Send to ${campaign.recipients[0].email}`}
                       </button>
                     )}
+                  </div>
+
+                  <div className={`p-3 rounded-xl text-xs font-bold border ${mailServer?.sendEnabled ? 'bg-red-50 text-red-700 border-red-200' : mailServer ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                    {mailServer?.sendEnabled
+                      ? `LIVE: emails will really be sent from ${mailServer.from}.`
+                      : mailServer
+                        ? 'Dry run: the mail server will not send anything (SEND_ENABLED is off).'
+                        : 'Mail server not running. Start it with "npm run server"; until then every send will fail.'}
                   </div>
 
                   {(isSending || isSendingSingle) && (
@@ -562,13 +605,14 @@ const App: React.FC = () => {
             {sentCampaigns.length === 0 ? <p className="text-slate-400 text-center py-20">No campaigns archived</p> : sentCampaigns.map(sc => (
               <div key={sc.id} className="bg-white rounded-2xl border shadow-sm overflow-hidden mb-6">
                 <div className="bg-slate-800 p-4 text-white flex justify-between items-center">
-                  <div><h3 className="font-bold">{sc.name}</h3><p className="text-xs opacity-60">{sc.totalRecipients} Real-time Payloads Stored</p></div>
-                  <span className="bg-green-500 text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest">Delivered</span>
+                  <div><h3 className="font-bold">{sc.name}</h3><p className="text-xs opacity-60">{sc.emails.filter(e => e.status === 'sent').length} sent &bull; {sc.emails.filter(e => e.status === 'dry-run').length} dry run &bull; {sc.emails.filter(e => e.status === 'failed').length} failed</p></div>
+                  {(() => { const failed = sc.emails.some(e => e.status === 'failed'); const dry = sc.emails.every(e => e.status === 'dry-run');
+                    return <span className={`${failed ? 'bg-red-500' : dry ? 'bg-amber-500' : 'bg-green-500'} text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest`}>{failed ? 'Has Failures' : dry ? 'Dry Run' : 'Delivered'}</span>; })()}
                 </div>
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Packets</th></tr></thead>
+                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Packets</th></tr></thead>
                   <tbody className="divide-y">{sc.emails.slice(0, 5).map(e => (
-                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[8px] px-1 rounded border border-blue-100">Packet_{i}</span>)}</div></td></tr>
+                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[8px] px-1 rounded border border-blue-100">Packet_{i}</span>)}</div></td></tr>
                   ))}</tbody>
                 </table>
               </div>
@@ -577,7 +621,7 @@ const App: React.FC = () => {
         )}
       </main>
       <footer className="mt-16 mb-8 text-center text-slate-400 text-xs font-medium">
-        <p>MassMailer Pro v1.4 &bull; Gemini 2.5 Real-time Engine &bull; Zero Delay Delivery Simulation</p>
+        <p>MassMailer Pro v1.4 &bull; Gemini 2.5 Real-time Engine &bull; SMTP Delivery</p>
       </footer>
     </div>
   );

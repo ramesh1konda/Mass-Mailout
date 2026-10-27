@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        // Forward API calls to the mail server (npm run server)
+        proxy: {
+          '/api': `http://localhost:${env.MAIL_SERVER_PORT || 3001}`,
+        },
       },
       plugins: [react()],
       define: {
