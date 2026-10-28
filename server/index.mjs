@@ -88,9 +88,14 @@ const start = async () => {
       console.error('SEND_ENABLED=true needs SMTP_HOST and MAIL_FROM (or SMTP_USER).');
       process.exit(1);
     }
+    if (!/[^\s@<>]+@[^\s@<>]+/.test(FROM)) {
+      console.error(`MAIL_FROM "${FROM}" has no email address. Use e.g. MAIL_FROM="Your Name <you@example.com>".`);
+      process.exit(1);
+    }
     await transporter.verify();
     console.log(`SMTP OK (${env.SMTP_HOST}). REAL sending is ON from ${FROM}.`);
   } else {
+    if (FROM && !/[^\s@<>]+@[^\s@<>]+/.test(FROM)) console.warn(`WARNING: MAIL_FROM "${FROM}" has no email address, so previews will have no From line and a real send would fail.`);
     console.log(`SEND_ENABLED is not "true": dry-run mode, no email will be sent. Previews (.eml) go to ${PREVIEW_DIR}`);
   }
   app.listen(PORT, () => console.log(`Mail server listening on http://localhost:${PORT}`));
