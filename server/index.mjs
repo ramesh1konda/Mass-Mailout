@@ -9,11 +9,11 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { loadEnvLocal, buildMailOptions, buildEml, safeName } from './mail.mjs';
+import { loadConfig, isAllowedRecipient, buildMailOptions, buildEml, safeName } from './mail.mjs';
 import { createTemplateStore } from './templates.mjs';
 import { createCoreArchiver } from './core.mjs';
 
-loadEnvLocal();
+const APP_ENV = loadConfig();
 
 const env = process.env;
 const PORT = Number(env.MAIL_SERVER_PORT || 3001);
@@ -46,13 +46,18 @@ const app = express();
 app.use(express.json({ limit: '30mb' }));
 
 app.get('/api/status', (_req, res) => {
-  res.json({ sendEnabled: SEND_ENABLED, from: FROM || null, core: core.info() });
+  res.json({ appEnv: APP_ENV, sendEnabled: SEND_ENABLED, from: FROM || null, allowList: env.SEND_ALLOWLIST || null, core: core.info() });
 });
 
 app.post('/api/send', async (req, res) => {
   const { to, subject, text, html, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0, mergeData = {} } = req.body || {};
   if (!emailRe.test(to || '')) return res.status(400).json({ status: 'failed', error: `Invalid recipient: ${to}` });
   if (!subject) return res.status(400).json({ status: 'failed', error: 'Subject is required' });
+  // Live sends only: in dev/test the allow-list keeps real clients out
+  if (SEND_ENABLED && !isAllowedRecipient(to)) {
+    console.warn(`[BLOCKED] ${to} is not on SEND_ALLOWLIST (${APP_ENV})`);
+    return res.status(403).json({ status: 'failed', error: `${to} is not on the ${APP_ENV.toUpperCase()} allow-list (SEND_ALLOWLIST)` });
+  }
 
   // The .eml is built once and used for the preview, the actual send and the CORE copy,
   // so what is stored against the loan is byte-for-byte what the client received
@@ -114,6 +119,11 @@ app.get('/api/preview/:batch/:file', (req, res) => {
 });
 
 const start = async () => {
+  console.log(`Environment: ${APP_ENV.toUpperCase()} (config/${APP_ENV}.env + .env.local)`);
+  if (APP_ENV !== 'prod' && SEND_ENABLED && !env.SEND_ALLOWLIST) {
+    console.error(`SEND_ENABLED=true in ${APP_ENV.toUpperCase()} needs SEND_ALLOWLIST (e.g. @iqeq.com) so real clients can't be emailed from a non-prod environment.`);
+    process.exit(1);
+  }
   if (SEND_ENABLED) {
     if (!env.SMTP_HOST || !FROM) {
       console.error('SEND_ENABLED=true needs SMTP_HOST and MAIL_FROM (or SMTP_USER).');

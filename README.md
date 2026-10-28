@@ -3,6 +3,7 @@ AIT-TBC | README.md | Ramesh Konda | 2026-10-28 | Project summary: functionality
 Change log:
   2026-10-28 RK AIT-TBC Initial version
   2026-10-28 RK AIT-TBC Rewritten as the full project summary (replaces the AI Studio boilerplate)
+  2026-10-28 RK AIT-TBC Per-environment config (config/dev|test|prod.env, APP_ENV, SEND_ALLOWLIST)
 -->
 
 # MassMailer Pro (Mass Mailout)
@@ -149,9 +150,33 @@ Safety switches:
 
 These are not in git: `.env.local`, which holds secrets; `data/`, which holds the templates; `dry-run-output/`; `dist/`; and `node_modules/`.
 
-## Configuration (`.env.local`)
+## Environments (dev, test, prod)
 
-Copy `.env.example` to `.env.local`. Never commit `.env.local`. The mail server reads it only at start-up, so restart `npm run server` after any change.
+Settings come from three layers. The highest one wins:
+
+| Layer | What goes there | In git? |
+|---|---|---|
+| Real environment variables | Pipeline or service variables, e.g. secret variable groups | No |
+| `.env.local` on the machine | `APP_ENV` and the secrets (`SMTP_USER`, `SMTP_PASS`, `CORE_DB_USER`, `CORE_DB_PASSWORD`, `GEMINI_API_KEY`), plus any local overrides | No |
+| `config/<APP_ENV>.env` | Every non-secret setting for that environment: SMTP host, From address, allow-list, CORE server and database, safety switches | Yes |
+
+`APP_ENV` is `dev`, `test` or `prod`, and defaults to `dev`. The pipeline maps it from the branch automatically: `dev` → `dev`, `test` → `test`, `master` → `prod`. It stamps `config/active-env` into each build artifact, so a deployed build starts in the right environment without any manual setting. The app header shows the environment as a DEV, TEST or PROD badge, and `/api/status` reports it.
+
+Per-environment safety:
+- **Dev and test** can only send live email to `SEND_ALLOWLIST`, for example `@iqeq.com,@amal.com.au`. The server won't start in live mode there without an allow-list.
+- **A production database** (any name containing "prod") is refused unless `APP_ENV=prod` **and** `CORE_ALLOW_PROD=true`.
+- **No secrets in config files.** `npm run check-config`, which also runs in the pipeline, fails the build if any secret appears in a config file, if a setting is unknown, or if a non-prod file allows prod or sends without an allow-list.
+
+To go live in an environment, fill in its `TBC` values in `config/<env>.env` (From address, SMTP host, CORE server and database), then switch on `SEND_ENABLED`, `CORE_ATTACH_ENABLED` and `CORE_DB_DRYRUN=false` in a reviewed commit to that branch.
+
+## Configuration (all settings)
+
+Copy `.env.example` to `.env.local` and set `APP_ENV` and the secrets. Never commit `.env.local`. Everything else comes from `config/<APP_ENV>.env`. Uncomment a setting in `.env.local` only to override it on that machine. The mail server reads its settings only at start-up, so restart `npm run server` after any change.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `APP_ENV` | `dev` | `dev`, `test` or `prod`. Picks `config/<APP_ENV>.env` |
+| `SEND_ALLOWLIST` | dev/test: `@iqeq.com,@amal.com.au`; prod: (blank) | Live sends only to these addresses or @domains. Blank means anyone |
 
 **App**
 
@@ -212,17 +237,19 @@ npm run dev                       # terminal 2: app on http://localhost:3000
 | `npm run typecheck` | TypeScript check (`tsc --noEmit`) |
 | `npm run dry-run -- <csv> <campaign.json> [outDir]` | Command-line dry run that writes `.eml` previews |
 | `npm run smoke` | Mail server smoke test on port 3901 with sending forced off |
+| `npm run check-config` | Checks `config/*.env`: no secrets, known settings, non-prod safety |
 
 ## Azure DevOps pipeline
 
 The code lives in Azure Repos, **Mass Mailout**, on three long-lived branches: `dev`, `test` and `master` (the default). `azure-pipelines.yml` runs on every push to those branches and on pull requests into them. Each run does the following:
 
 1. `npm ci` on Node 22
-2. Type-check
-3. Vite build
-4. Syntax check of `server/`, `shared/` and `scripts/`
-5. Sample dry run
-6. Mail server smoke test in dry-run mode
+2. Config check (`npm run check-config`)
+3. Type-check
+4. Vite build
+5. Syntax check of `server/`, `shared/` and `scripts/`
+6. Sample dry run
+7. Mail server smoke test in dry-run mode, under that branch's `APP_ENV`
 
 The result is published as a pipeline artifact named after the branch: `dev` → `massmailout-Dev`, `test` → `massmailout-Test`, `master` → `massmailout-Prod`. The pipeline builds and tests only. It deploys nothing and never sends email.
 
@@ -231,6 +258,7 @@ Run the same checks locally with `npm run typecheck && npm run build && npm run 
 ## Open items
 
 - **CORE loan GUID source.** Either add a `LoanGUID` column to the campaign CSV, or confirm the CORE table and column for `CORE_LOANGUID_LOOKUP_SQL`.
+- **Per-environment values** in `config/dev.env`, `config/test.env` and `config/prod.env`, marked `TBC`: SMTP host, From address, CORE server and database. Also confirm the dev/test allow-list domains.
 - **CORE UAT server and database** for `CORE_DB_SERVER` and `CORE_DB_NAME`, so the connector can be tested before production.
 - **AIT ticket number**, to replace `AIT-TBC` in the file preambles.
 - **`MAIL_FROM`** needs a real sender address, for example `Mass Mailout <noreply@yourdomain.com.au>`, before live sending. The server won't start in live mode without one.

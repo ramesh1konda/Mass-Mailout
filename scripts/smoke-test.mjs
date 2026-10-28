@@ -13,6 +13,7 @@ const work = mkdtempSync(join(tmpdir(), 'massmailout-smoke-'));
 const server = spawn(process.execPath, ['server/index.mjs'], {
   env: {
     ...process.env,
+    APP_ENV: process.env.APP_ENV || 'dev',
     SEND_ENABLED: 'false',
     CORE_ATTACH_ENABLED: 'false',
     MAIL_SERVER_PORT: String(port),
@@ -31,7 +32,8 @@ try {
     try { await fetch(`${base}/api/status`); break; } catch { if (i > 50) throw new Error('server did not start'); await new Promise(r => setTimeout(r, 200)); }
   }
   const status = await (await fetch(`${base}/api/status`)).json();
-  check(status.sendEnabled === false, 'status reports dry-run mode');
+  check(status.sendEnabled === false, `status reports dry-run mode (${status.appEnv})`);
+  check(status.appEnv === (process.env.APP_ENV || 'dev'), 'server picked up APP_ENV');
 
   const templates = await (await fetch(`${base}/api/templates`)).json();
   check(Array.isArray(templates) && templates.length > 0, 'templates endpoint returns the default template');

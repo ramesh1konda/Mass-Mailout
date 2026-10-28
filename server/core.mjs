@@ -66,8 +66,9 @@ export const createCoreArchiver = (env) => {
   const verify = async () => {
     if (!enabled) return;
     if (!config.server || !config.database) throw new Error('CORE_ATTACH_ENABLED=true needs CORE_DB_SERVER and CORE_DB_NAME.');
-    if (/prod/i.test(`${config.server} ${config.database}`) && env.CORE_ALLOW_PROD !== 'true') {
-      throw new Error(`${config.server}/${config.database} looks like production. Set CORE_ALLOW_PROD=true only once UAT is signed off.`);
+    // Production-looking targets need BOTH APP_ENV=prod and CORE_ALLOW_PROD=true
+    if (/prod/i.test(`${config.server} ${config.database}`) && !(env.APP_ENV === 'prod' && env.CORE_ALLOW_PROD === 'true')) {
+      throw new Error(`${config.server}/${config.database} looks like production. Only allowed with APP_ENV=prod and CORE_ALLOW_PROD=true.`);
     }
     const p = await connect();
     const r = await p.request().input('Proc', p.__lib.NVarChar(256), config.proc)

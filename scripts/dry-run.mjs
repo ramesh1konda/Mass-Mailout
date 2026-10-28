@@ -9,11 +9,11 @@
 // template name or id from the Admin tab (data/templates.json); "bodyIsHtml": true treats body as HTML.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, rmSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
-import { loadEnvLocal, buildMailOptions, buildEml, safeName } from '../server/mail.mjs';
+import { loadConfig, buildMailOptions, buildEml, safeName } from '../server/mail.mjs';
 import { createTemplateStore } from '../server/templates.mjs';
 import { personalize, findMergeTags, renderEmailHtml } from '../shared/emailRender.mjs';
 
-loadEnvLocal();
+loadConfig();
 
 const [csvPath, campaignPath, outDir = 'dry-run-output'] = process.argv.slice(2);
 if (!csvPath || !campaignPath) {

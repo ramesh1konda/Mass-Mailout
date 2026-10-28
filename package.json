@@ -10,7 +10,8 @@
     "server": "node server/index.mjs",
     "dry-run": "node scripts/dry-run.mjs",
     "typecheck": "tsc --noEmit -p .",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "check-config": "node scripts/check-config.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",

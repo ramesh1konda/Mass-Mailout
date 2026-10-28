@@ -1,9 +1,11 @@
 # AIT-TBC | azure-pipelines.yml | Ramesh Konda | 2026-10-28 | Build pipeline for Mass Mailout: dev, test and master branches
 # Change log:
 #   2026-10-28 RK AIT-TBC Initial version: type-check, build, dry-run + mail server smoke tests, publish artifact
+#   2026-10-28 RK AIT-TBC Per-environment config: APP_ENV from branch, config check, config/active-env in artifact
 
-# One pipeline serves all three branches; the branch decides the environment label:
-#   dev -> Dev, test -> Test, master -> Prod
+# One pipeline serves all three branches; the branch decides the environment:
+#   dev -> Dev (APP_ENV=dev), test -> Test (APP_ENV=test), master -> Prod (APP_ENV=prod)
+# The artifact carries config/<env>.env plus config/active-env, so it starts in the right environment.
 # Builds and tests only. Nothing is deployed and no email is ever sent (smoke tests run in dry-run mode).
 
 trigger:
@@ -27,10 +29,13 @@ variables:
   nodeVersion: '22.x'
   ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
     environmentName: Prod
+    appEnv: prod
   ${{ elseif eq(variables['Build.SourceBranchName'], 'test') }}:
     environmentName: Test
+    appEnv: test
   ${{ else }}:
     environmentName: Dev
+    appEnv: dev
 
 name: $(Date:yyyyMMdd)$(Rev:.r) ($(Build.SourceBranchName))
 
@@ -49,6 +54,9 @@ stages:
           - script: npm ci
             displayName: Install dependencies
 
+          - script: npm run check-config
+            displayName: Check config files (all environments, no secrets)
+
           - script: npm run typecheck
             displayName: Type-check (tsc)
 
@@ -64,13 +72,16 @@ stages:
             displayName: Dry-run preview (sample campaign)
 
           - script: npm run smoke
-            displayName: Mail server smoke test (dry-run mode)
+            displayName: Mail server smoke test (dry-run mode, APP_ENV=$(appEnv))
+            env:
+              APP_ENV: $(appEnv)
 
           - script: |
               set -e
               mkdir -p $(Build.ArtifactStagingDirectory)/massmailout
-              cp -r dist server shared scripts samples package.json package-lock.json .env.example README.md $(Build.ArtifactStagingDirectory)/massmailout/
-              echo "$(Build.SourceBranchName) $(Build.SourceVersion) $(environmentName)" > $(Build.ArtifactStagingDirectory)/massmailout/BUILD_INFO.txt
+              cp -r dist server shared scripts samples config package.json package-lock.json .env.example README.md $(Build.ArtifactStagingDirectory)/massmailout/
+              echo "$(appEnv)" > $(Build.ArtifactStagingDirectory)/massmailout/config/active-env
+              echo "$(Build.SourceBranchName) $(Build.SourceVersion) $(environmentName) APP_ENV=$(appEnv)" > $(Build.ArtifactStagingDirectory)/massmailout/BUILD_INFO.txt
             displayName: Stage artifact
 
           - task: PublishPipelineArtifact@1

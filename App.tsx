@@ -75,7 +75,7 @@ const App: React.FC = () => {
   const [sendProgress, setSendProgress] = useState(0);
   const [transmissionLog, setTransmissionLog] = useState<string[]>([]);
   // null = mail server not reachable
-  const [mailServer, setMailServer] = useState<{ sendEnabled: boolean; from: string | null; core?: { enabled: boolean; server: string | null; database: string | null; procDryRun: boolean; attachDryRuns: boolean } } | null>(null);
+  const [mailServer, setMailServer] = useState<{ appEnv?: 'dev' | 'test' | 'prod'; allowList?: string | null; sendEnabled: boolean; from: string | null; core?: { enabled: boolean; server: string | null; database: string | null; procDryRun: boolean; attachDryRuns: boolean } } | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Live API State
@@ -457,6 +457,11 @@ const App: React.FC = () => {
         <div className="text-center md:text-left">
           <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
             MassMailer <span className="text-blue-600">Pro</span>
+            {mailServer?.appEnv && (
+              <span className={`ml-3 align-middle text-xs font-bold px-2 py-1 rounded-full ${mailServer.appEnv === 'prod' ? 'bg-red-600 text-white' : mailServer.appEnv === 'test' ? 'bg-amber-400 text-slate-900' : 'bg-emerald-500 text-white'}`} title="Environment (APP_ENV)">
+                {mailServer.appEnv.toUpperCase()}
+              </span>
+            )}
           </h1>
           <p className="text-slate-500 font-medium italic">Advanced Real-time Personalization</p>
         </div>
@@ -594,7 +599,7 @@ const App: React.FC = () => {
 
                   <div className={`p-3 rounded-xl text-xs font-bold border ${mailServer?.sendEnabled ? 'bg-red-50 text-red-700 border-red-200' : mailServer ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                     {mailServer?.sendEnabled
-                      ? `LIVE: emails will really be sent from ${mailServer.from}.`
+                      ? `LIVE: emails will really be sent from ${mailServer.from}.${mailServer.allowList ? ` Only to: ${mailServer.allowList}.` : ''}`
                       : mailServer
                         ? 'Dry run: nothing will be sent. Each email is saved as a .eml file (with attachments) that you can open in Outlook from History.'
                         : 'Mail server not running. Start it with "npm run server"; until then every send will fail.'}
