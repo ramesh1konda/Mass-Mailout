@@ -23,6 +23,8 @@ export interface SentEmail {
   sentAt: number;
   status: 'sent' | 'dry-run' | 'failed';
   error?: string;
+  previewUrl?: string; // dry runs only: download link for the .eml the server wrote
+
 }
 
 export interface SentCampaign {

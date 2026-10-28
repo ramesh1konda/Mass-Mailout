@@ -91,15 +91,16 @@ const App: React.FC = () => {
     fetch('/api/status').then(r => r.ok ? r.json() : null).then(setMailServer).catch(() => setMailServer(null));
   }, []);
 
-  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>): Promise<SentEmail> => {
+  // batch = { id, index } groups a launch's dry-run previews into one folder on the mail server
+  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>, batch: { id: string; index: number }): Promise<SentEmail> => {
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: email.personalizedBody, attachments: email.attachments }),
+        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: email.personalizedBody, attachments: email.attachments, campaign: campaign.name || 'campaign', batchId: batch.id, index: batch.index }),
       });
       const data = await res.json().catch(() => ({ status: 'failed', error: `HTTP ${res.status}` }));
-      return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, sentAt: Date.now() };
+      return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, previewUrl: data.preview, sentAt: Date.now() };
     } catch (err: any) {
       return { ...email, status: 'failed', error: err?.message || 'Mail server unreachable', sentAt: Date.now() };
     }
@@ -107,7 +108,7 @@ const App: React.FC = () => {
 
   const logResult = (e: SentEmail) =>
     e.status === 'sent' ? `[SENT] ${e.recipientEmail}`
-    : e.status === 'dry-run' ? `[DRY RUN] ${e.recipientEmail} (not sent)`
+    : e.status === 'dry-run' ? `[DRY RUN] ${e.recipientEmail} (not sent, .eml preview saved with ${e.attachments.length} attachment(s))`
     : `[FAILED] ${e.recipientEmail}: ${e.error}`;
 
   const confirmRealSend = (count: number) =>
@@ -383,7 +384,7 @@ const App: React.FC = () => {
         personalizedBody: personalize(campaign.body, recipient),
         attachments: processedAttachments,
         sentAt: Date.now()
-      });
+      }, { id: `test-${Date.now()}`, index: 0 });
       setTransmissionLog(prev => [...prev, logResult(generatedEmail)]);
 
       setSentCampaigns(prev => [{ id: crypto.randomUUID(), name: `${campaign.name} (Single)`, emails: [generatedEmail], totalRecipients: 1, createdAt: Date.now() }, ...prev]);
@@ -404,6 +405,7 @@ const App: React.FC = () => {
       );
 
       const generatedEmails: SentEmail[] = [];
+      const batchId = new Date().toISOString().replace(/[:.]/g, '-');
       
       for (let i = 0; i < campaign.recipients.length; i++) {
         const recipient = campaign.recipients[i];
@@ -418,7 +420,7 @@ const App: React.FC = () => {
           personalizedBody: personalize(campaign.body, recipient),
           attachments: processedAttachments,
           sentAt: Date.now()
-        });
+        }, { id: batchId, index: i });
 
         generatedEmails.push(email);
         setSendProgress(progress);
@@ -560,7 +562,7 @@ const App: React.FC = () => {
                     {mailServer?.sendEnabled
                       ? `LIVE: emails will really be sent from ${mailServer.from}.`
                       : mailServer
-                        ? 'Dry run: the mail server will not send anything (SEND_ENABLED is off).'
+                        ? 'Dry run: nothing will be sent. Each email is saved as a .eml file (with attachments) that you can open in Outlook from History.'
                         : 'Mail server not running. Start it with "npm run server"; until then every send will fail.'}
                   </div>
 
@@ -610,9 +612,9 @@ const App: React.FC = () => {
                     return <span className={`${failed ? 'bg-red-500' : dry ? 'bg-amber-500' : 'bg-green-500'} text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest`}>{failed ? 'Has Failures' : dry ? 'Dry Run' : 'Delivered'}</span>; })()}
                 </div>
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Packets</th></tr></thead>
-                  <tbody className="divide-y">{sc.emails.slice(0, 5).map(e => (
-                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[8px] px-1 rounded border border-blue-100">Packet_{i}</span>)}</div></td></tr>
+                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Attachments</th></tr></thead>
+                  <tbody className="divide-y">{sc.emails.map(e => (
+                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}{e.previewUrl && <a href={e.previewUrl} className="ml-2 text-blue-600 underline font-normal" title="Download the .eml and open it in Outlook">preview .eml</a>}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[10px] px-1 rounded border border-blue-100">{a.name}</span>)}</div></td></tr>
                   ))}</tbody>
                 </table>
               </div>

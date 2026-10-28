@@ -2,5 +2,5 @@
   "name": "Sample Q4 Newsletter",
   "subject": "{{name}}, your Q4 update from us",
   "body": "Hi {{name}},\n\nThanks for being with us at {{company}}. Here is what's new for our customers in {{City}}.\n\nRegards,\nThe Team",
-  "attachments": ["Q4-brochure.pdf"]
+  "attachments": ["attachments/Q4-brochure.pdf", "attachments/price-list.csv"]
 }

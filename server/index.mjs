@@ -3,21 +3,19 @@
 // Real delivery only happens when SEND_ENABLED=true; otherwise every request is a dry run.
 import express from 'express';
 import nodemailer from 'nodemailer';
-import { readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { loadEnvLocal, buildMailOptions, buildEml, safeName } from './mail.mjs';
 
-// Minimal .env.local loader so the server shares the Vite env file
-if (existsSync('.env.local')) {
-  for (const line of readFileSync('.env.local', 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
-  }
-}
+loadEnvLocal();
 
 const env = process.env;
 const PORT = Number(env.MAIL_SERVER_PORT || 3001);
 const SEND_ENABLED = env.SEND_ENABLED === 'true';
 const SEND_DELAY_MS = Number(env.SEND_DELAY_MS || 1000); // min gap between sends, keeps SMTP providers happy
 const FROM = env.MAIL_FROM || env.SMTP_USER;
+// Dry runs write each email as a real .eml (with attachments) here, one folder per batch
+const PREVIEW_DIR = resolve(env.DRY_RUN_DIR || 'dry-run-output');
 
 const transporter = SEND_ENABLED
   ? nodemailer.createTransport({
@@ -44,35 +42,44 @@ app.get('/api/status', (_req, res) => {
 });
 
 app.post('/api/send', async (req, res) => {
-  const { to, subject, text, attachments = [] } = req.body || {};
+  const { to, subject, text, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0 } = req.body || {};
   if (!emailRe.test(to || '')) return res.status(400).json({ status: 'failed', error: `Invalid recipient: ${to}` });
   if (!subject) return res.status(400).json({ status: 'failed', error: 'Subject is required' });
 
+  const options = buildMailOptions({ from: FROM || 'dry-run@localhost', to, subject, text, attachments });
+
   if (!SEND_ENABLED) {
-    console.log(`[DRY RUN] ${to} | ${subject} | ${attachments.length} attachment(s)`);
-    return res.json({ status: 'dry-run' });
+    try {
+      const batch = safeName(`${campaign}_${batchId}`);
+      const file = `${String(index + 1).padStart(4, '0')}_${safeName(to)}.eml`;
+      mkdirSync(join(PREVIEW_DIR, batch), { recursive: true });
+      writeFileSync(join(PREVIEW_DIR, batch, file), await buildEml(options));
+      console.log(`[DRY RUN] ${to} | ${subject} | ${attachments.length} attachment(s) -> ${join(PREVIEW_DIR, batch, file)}`);
+      return res.json({ status: 'dry-run', preview: `/api/preview/${encodeURIComponent(batch)}/${encodeURIComponent(file)}` });
+    } catch (err) {
+      console.error(`[DRY RUN FAILED] ${to} | ${err.message}`);
+      return res.status(500).json({ status: 'failed', error: err.message });
+    }
   }
 
   try {
     await throttle();
-    const info = await transporter.sendMail({
-      from: FROM,
-      to,
-      subject,
-      text,
-      // App sends data URLs ("data:<mime>;base64,<data>"); nodemailer wants the raw base64
-      attachments: attachments.map(a => ({
-        filename: a.name,
-        content: String(a.base64).replace(/^data:[^,]*,/, ''),
-        encoding: 'base64',
-      })),
-    });
+    const info = await transporter.sendMail(options);
     console.log(`[SENT] ${to} | ${info.messageId}`);
     res.json({ status: 'sent', messageId: info.messageId });
   } catch (err) {
     console.error(`[FAILED] ${to} | ${err.message}`);
     res.status(502).json({ status: 'failed', error: err.message });
   }
+});
+
+// Download a dry-run .eml; double-click it to open in Outlook/Mail exactly as the recipient would see it
+app.get('/api/preview/:batch/:file', (req, res) => {
+  const batch = safeName(req.params.batch);
+  const file = safeName(req.params.file);
+  const path = join(PREVIEW_DIR, batch, file);
+  if (!file.endsWith('.eml') || !existsSync(path)) return res.status(404).send('Preview not found');
+  res.download(path, file, { headers: { 'Content-Type': 'message/rfc822' } });
 });
 
 const start = async () => {
@@ -84,7 +91,7 @@ const start = async () => {
     await transporter.verify();
     console.log(`SMTP OK (${env.SMTP_HOST}). REAL sending is ON from ${FROM}.`);
   } else {
-    console.log('SEND_ENABLED is not "true": running in dry-run mode, no email will be sent.');
+    console.log(`SEND_ENABLED is not "true": dry-run mode, no email will be sent. Previews (.eml) go to ${PREVIEW_DIR}`);
   }
   app.listen(PORT, () => console.log(`Mail server listening on http://localhost:${PORT}`));
 };
