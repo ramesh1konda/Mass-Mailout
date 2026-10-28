@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadEnvLocal, buildMailOptions, buildEml, safeName } from './mail.mjs';
 import { createTemplateStore } from './templates.mjs';
+import { createCoreArchiver } from './core.mjs';
 
 loadEnvLocal();
 
@@ -17,6 +18,7 @@ const SEND_DELAY_MS = Number(env.SEND_DELAY_MS || 1000); // min gap between send
 const FROM = env.MAIL_FROM || env.SMTP_USER;
 // Dry runs write each email as a real .eml (with attachments) here, one folder per batch
 const PREVIEW_DIR = resolve(env.DRY_RUN_DIR || 'dry-run-output');
+const core = createCoreArchiver(env);
 const templates = createTemplateStore(resolve(env.TEMPLATES_FILE || 'data/templates.json'));
 
 const transporter = SEND_ENABLED
@@ -40,39 +42,51 @@ const app = express();
 app.use(express.json({ limit: '30mb' }));
 
 app.get('/api/status', (_req, res) => {
-  res.json({ sendEnabled: SEND_ENABLED, from: FROM || null });
+  res.json({ sendEnabled: SEND_ENABLED, from: FROM || null, core: core.info() });
 });
 
 app.post('/api/send', async (req, res) => {
-  const { to, subject, text, html, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0 } = req.body || {};
+  const { to, subject, text, html, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0, mergeData = {} } = req.body || {};
   if (!emailRe.test(to || '')) return res.status(400).json({ status: 'failed', error: `Invalid recipient: ${to}` });
   if (!subject) return res.status(400).json({ status: 'failed', error: 'Subject is required' });
 
+  // The .eml is built once and used for the preview, the actual send and the CORE copy,
+  // so what is stored against the loan is byte-for-byte what the client received
   const options = buildMailOptions({ from: FROM || 'dry-run@localhost', to, subject, text, html, attachments });
+  const fileName = `${String(index + 1).padStart(4, '0')}_${safeName(to)}.eml`;
+  let eml;
+  try { eml = await buildEml(options); } catch (err) { return res.status(500).json({ status: 'failed', error: err.message }); }
 
+  let result;
   if (!SEND_ENABLED) {
     try {
       const batch = safeName(`${campaign}_${batchId}`);
-      const file = `${String(index + 1).padStart(4, '0')}_${safeName(to)}.eml`;
       mkdirSync(join(PREVIEW_DIR, batch), { recursive: true });
-      writeFileSync(join(PREVIEW_DIR, batch, file), await buildEml(options));
-      console.log(`[DRY RUN] ${to} | ${subject} | ${attachments.length} attachment(s) -> ${join(PREVIEW_DIR, batch, file)}`);
-      return res.json({ status: 'dry-run', preview: `/api/preview/${encodeURIComponent(batch)}/${encodeURIComponent(file)}` });
+      writeFileSync(join(PREVIEW_DIR, batch, fileName), eml);
+      console.log(`[DRY RUN] ${to} | ${subject} | ${attachments.length} attachment(s) -> ${join(PREVIEW_DIR, batch, fileName)}`);
+      result = { status: 'dry-run', preview: `/api/preview/${encodeURIComponent(batch)}/${encodeURIComponent(fileName)}` };
     } catch (err) {
       console.error(`[DRY RUN FAILED] ${to} | ${err.message}`);
       return res.status(500).json({ status: 'failed', error: err.message });
     }
+  } else {
+    try {
+      await throttle();
+      const info = await transporter.sendMail({ envelope: { from: FROM, to: [to] }, raw: eml });
+      console.log(`[SENT] ${to} | ${info.messageId}`);
+      result = { status: 'sent', messageId: info.messageId };
+    } catch (err) {
+      console.error(`[FAILED] ${to} | ${err.message}`);
+      return res.status(502).json({ status: 'failed', error: err.message });
+    }
   }
 
-  try {
-    await throttle();
-    const info = await transporter.sendMail(options);
-    console.log(`[SENT] ${to} | ${info.messageId}`);
-    res.json({ status: 'sent', messageId: info.messageId });
-  } catch (err) {
-    console.error(`[FAILED] ${to} | ${err.message}`);
-    res.status(502).json({ status: 'failed', error: err.message });
+  // A CORE failure never undoes the send; it is reported per email so it can be followed up
+  if (core.appliesTo(result.status)) {
+    result.core = await core.archive({ mergeData, eml, fileName, to, subject, sendStatus: result.status, campaign });
+    console.log(`[CORE ${result.core.status.toUpperCase()}] ${to}${result.core.archiveId ? ` | ArchiveID ${result.core.archiveId}` : ''}${result.core.error ? ` | ${result.core.error}` : ''}`);
   }
+  res.json(result);
 });
 
 // Email templates (Admin tab)
@@ -111,7 +125,12 @@ const start = async () => {
     if (FROM && !/[^\s@<>]+@[^\s@<>]+/.test(FROM)) console.warn(`WARNING: MAIL_FROM "${FROM}" has no email address, so previews will have no From line and a real send would fail.`);
     console.log(`SEND_ENABLED is not "true": dry-run mode, no email will be sent. Previews (.eml) go to ${PREVIEW_DIR}`);
   }
+  if (core.enabled) {
+    const db = await core.verify();
+    const { procDryRun, attachDryRuns } = core.info();
+    console.log(`CORE attach ON: ${db.Srv}/${db.Db}${procDryRun ? ' (proc @DryRun = 1, nothing is written)' : ' (WRITING to CORE)'}${attachDryRuns ? ', including dry-run emails' : ', live sends only'}`);
+  }
   app.listen(PORT, () => console.log(`Mail server listening on http://localhost:${PORT}`));
 };
 
-start().catch(err => { console.error(`SMTP check failed: ${err.message}`); process.exit(1); });
+start().catch(err => { console.error(`Startup check failed: ${err.message}`); process.exit(1); });

@@ -45,6 +45,23 @@ In the campaign's Template step, pick a **Design template** and tick **Body is H
 
 Merge fields work in the subject, body, header and footer, written as either `{{column}}` or `@Field(column)`. They are matched to CSV column names case-insensitively, and merged values are HTML-escaped.
 
+### Storing sent emails against the loan in CORE
+
+The mail server can save each email against its loan in CORE. The saved copy is the exact `.eml` the client received, attachments included, titled e.g. `560246 - Ramesh Konda` (set by `CORE_DOC_TITLE`). This is off by default.
+
+1. Run `sql/01_AMAL_MassMailout_EmailArchive.sql` and `sql/02_sp_AMAL_CORE_MassMailout_AttachEmail.sql` on **UAT** first.
+2. In `.env.local`, set `CORE_ATTACH_ENABLED=true`, `CORE_DB_SERVER` and `CORE_DB_NAME`.
+   - `CORE_DB_AUTH=windows` uses your Windows login and needs ODBC Driver 17 or 18.
+   - `CORE_DB_AUTH=sql` uses `CORE_DB_USER` and `CORE_DB_PASSWORD`.
+3. Restart `npm run server`. It checks that the proc exists and refuses a server or database whose name contains "prod" unless `CORE_ALLOW_PROD=true`.
+
+Safety switches:
+- `CORE_DB_DRYRUN=true` (the default) calls the proc with `@DryRun = 1`, which writes nothing. Set it to `false` to store for real.
+- Only real sends are stored unless `CORE_ATTACH_DRYRUNS=true`, which is meant for UAT testing.
+- A CORE failure never undoes a send. History shows each email's CORE status.
+
+The loan ID comes from the CSV column named in `CORE_LOANID_COLUMN` (default `Loanid`). For now the proc writes to `AMAL_MassMailout_EmailArchive`. Linking each row into the CORE loan document store is marked TODO in the proc, pending confirmation of the document table or proc.
+
 ### Previewing without the app
 
 `npm run dry-run -- <recipients.csv> <campaign.json> [outDir]` writes `emails.json`, `emails.csv`, `preview.html` and one real `.eml` per recipient in `eml/` with every attachment embedded. It flags invalid or duplicate rows, unresolved `{{tags}}` and blank merge values. In `campaign.json`, `attachments` is a list of file paths relative to the JSON file, and `from` is optional (it defaults to `MAIL_FROM`). Try it with `npm run dry-run -- samples/recipients.csv samples/campaign.json`, which attaches a PDF and a CSV from `samples/attachments/`. Add `"template": "<name or id>"` and `"bodyIsHtml": true` to use an Admin template, as in `samples/campaign-html.json`.

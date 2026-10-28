@@ -72,7 +72,7 @@ const App: React.FC = () => {
   const [sendProgress, setSendProgress] = useState(0);
   const [transmissionLog, setTransmissionLog] = useState<string[]>([]);
   // null = mail server not reachable
-  const [mailServer, setMailServer] = useState<{ sendEnabled: boolean; from: string | null } | null>(null);
+  const [mailServer, setMailServer] = useState<{ sendEnabled: boolean; from: string | null; core?: { enabled: boolean; server: string | null; database: string | null; procDryRun: boolean; attachDryRuns: boolean } } | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Live API State
@@ -97,24 +97,25 @@ const App: React.FC = () => {
   }, []);
 
   // batch = { id, index } groups a launch's dry-run previews into one folder on the mail server
-  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>, batch: { id: string; index: number }, html?: string): Promise<SentEmail> => {
+  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>, batch: { id: string; index: number }, html: string | undefined, recipient: Recipient): Promise<SentEmail> => {
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: html ? undefined : email.personalizedBody, html, attachments: email.attachments, campaign: campaign.name || 'campaign', batchId: batch.id, index: batch.index }),
+        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: html ? undefined : email.personalizedBody, html, attachments: email.attachments, campaign: campaign.name || 'campaign', batchId: batch.id, index: batch.index, mergeData: recipient }),
       });
       const data = await res.json().catch(() => ({ status: 'failed', error: `HTTP ${res.status}` }));
-      return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, previewUrl: data.preview, sentAt: Date.now() };
+      return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, previewUrl: data.preview, core: data.core, sentAt: Date.now() };
     } catch (err: any) {
       return { ...email, status: 'failed', error: err?.message || 'Mail server unreachable', sentAt: Date.now() };
     }
   };
 
   const logResult = (e: SentEmail) =>
-    e.status === 'sent' ? `[SENT] ${e.recipientEmail}`
+    (e.status === 'sent' ? `[SENT] ${e.recipientEmail}`
     : e.status === 'dry-run' ? `[DRY RUN] ${e.recipientEmail} (not sent, .eml preview saved with ${e.attachments.length} attachment(s))`
-    : `[FAILED] ${e.recipientEmail}: ${e.error}`;
+    : `[FAILED] ${e.recipientEmail}: ${e.error}`)
+    + (e.core ? ` | CORE: ${e.core.status}${e.core.error ? ` (${e.core.error})` : ''}` : '');
 
   const confirmRealSend = (count: number) =>
     !mailServer?.sendEnabled || window.confirm(`This will send REAL email to ${count} recipient(s) from ${mailServer.from}. Continue?`);
@@ -395,7 +396,7 @@ const App: React.FC = () => {
         personalizedBody: personalize(campaign.body, recipient),
         attachments: processedAttachments,
         sentAt: Date.now()
-      }, { id: `test-${Date.now()}`, index: 0 }, buildHtml(recipient));
+      }, { id: `test-${Date.now()}`, index: 0 }, buildHtml(recipient), recipient);
       setTransmissionLog(prev => [...prev, logResult(generatedEmail)]);
 
       setSentCampaigns(prev => [{ id: crypto.randomUUID(), name: `${campaign.name} (Single)`, emails: [generatedEmail], totalRecipients: 1, createdAt: Date.now() }, ...prev]);
@@ -431,7 +432,7 @@ const App: React.FC = () => {
           personalizedBody: personalize(campaign.body, recipient),
           attachments: processedAttachments,
           sentAt: Date.now()
-        }, { id: batchId, index: i }, buildHtml(recipient));
+        }, { id: batchId, index: i }, buildHtml(recipient), recipient);
 
         generatedEmails.push(email);
         setSendProgress(progress);
@@ -595,6 +596,12 @@ const App: React.FC = () => {
                         ? 'Dry run: nothing will be sent. Each email is saved as a .eml file (with attachments) that you can open in Outlook from History.'
                         : 'Mail server not running. Start it with "npm run server"; until then every send will fail.'}
                   </div>
+                  {mailServer?.core?.enabled && (
+                    <div className="p-3 rounded-xl text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+                      CORE: each {mailServer.core.attachDryRuns ? 'email (including dry runs)' : 'sent email'} is stored against its loan in {mailServer.core.server}/{mailServer.core.database}
+                      {mailServer.core.procDryRun ? ' (proc dry run: nothing is written yet).' : '.'}
+                    </div>
+                  )}
 
                   {(isSending || isSendingSingle) && (
                     <div className="space-y-4 animate-fadeIn">
@@ -652,9 +659,9 @@ const App: React.FC = () => {
                     return <span className={`${failed ? 'bg-red-500' : dry ? 'bg-amber-500' : 'bg-green-500'} text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-widest`}>{failed ? 'Has Failures' : dry ? 'Dry Run' : 'Delivered'}</span>; })()}
                 </div>
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Attachments</th></tr></thead>
+                  <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Attachments</th><th className="p-4 text-left">CORE</th></tr></thead>
                   <tbody className="divide-y">{sc.emails.map(e => (
-                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}{e.previewUrl && <a href={e.previewUrl} className="ml-2 text-blue-600 underline font-normal" title="Download the .eml and open it in Outlook">preview .eml</a>}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[10px] px-1 rounded border border-blue-100">{a.name}</span>)}</div></td></tr>
+                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}{e.previewUrl && <a href={e.previewUrl} className="ml-2 text-blue-600 underline font-normal" title="Download the .eml and open it in Outlook">preview .eml</a>}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[10px] px-1 rounded border border-blue-100">{a.name}</span>)}</div></td><td className={`p-4 font-bold ${e.core?.status === 'failed' ? 'text-red-600' : e.core?.status === 'attached' || e.core?.status === 'duplicate' ? 'text-green-600' : 'text-slate-400'}`} title={e.core?.error || e.core?.message}>{e.core ? e.core.status : '-'}</td></tr>
                   ))}</tbody>
                 </table>
               </div>
