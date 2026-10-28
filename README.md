@@ -45,22 +45,20 @@ In the campaign's Template step, pick a **Design template** and tick **Body is H
 
 Merge fields work in the subject, body, header and footer, written as either `{{column}}` or `@Field(column)`. They are matched to CSV column names case-insensitively, and merged values are HTML-escaped.
 
-### Storing sent emails against the loan in CORE
+### Saving sent emails to the loan in CORE
 
-The mail server can save each email against its loan in CORE. The saved copy is the exact `.eml` the client received, attachments included, titled e.g. `560246 - Ramesh Konda` (set by `CORE_DOC_TITLE`). This is off by default.
+The mail server can save each sent email to the loan's documents in CORE (ARMNet). It calls `dbo.sp_PublishSSRSDocs`, the same proc the TransmitSMS CLR uses, on its own connection. The saved file is the exact `.eml` the client received, attachments included. It's named like `560246 - Ramesh Konda 28-10-2026 104512.eml`, which you can change with `CORE_DOC_TITLE`. This is off by default.
 
-1. Run `sql/01_AMAL_MassMailout_EmailArchive.sql` and `sql/02_sp_AMAL_CORE_MassMailout_AttachEmail.sql` on **UAT** first.
-2. In `.env.local`, set `CORE_ATTACH_ENABLED=true`, `CORE_DB_SERVER` and `CORE_DB_NAME`.
-   - `CORE_DB_AUTH=windows` uses your Windows login and needs ODBC Driver 17 or 18.
+1. In `.env.local`, set `CORE_ATTACH_ENABLED=true`, `CORE_DB_SERVER` and `CORE_DB_NAME`.
+   - `CORE_DB_AUTH=windows` uses integrated security and needs ODBC Driver 17 or 18.
    - `CORE_DB_AUTH=sql` uses `CORE_DB_USER` and `CORE_DB_PASSWORD`.
+2. Give each loan a GUID (`@ownerGUID`). Either add a `LoanGUID` column to the CSV, or set `CORE_LOANGUID_LOOKUP_SQL` to a SELECT that takes `@LoanID` and returns the GUID.
 3. Restart `npm run server`. It checks that the proc exists and refuses a server or database whose name contains "prod" unless `CORE_ALLOW_PROD=true`.
 
 Safety switches:
-- `CORE_DB_DRYRUN=true` (the default) calls the proc with `@DryRun = 1`, which writes nothing. Set it to `false` to store for real.
-- Only real sends are stored unless `CORE_ATTACH_DRYRUNS=true`, which is meant for UAT testing.
+- `CORE_DB_DRYRUN=true` (the default) writes nothing. The log and History show the document name and loan that would be used.
+- Only real sends are saved unless `CORE_ATTACH_DRYRUNS=true`, which is meant for UAT testing.
 - A CORE failure never undoes a send. History shows each email's CORE status.
-
-The loan ID comes from the CSV column named in `CORE_LOANID_COLUMN` (default `Loanid`). For now the proc writes to `AMAL_MassMailout_EmailArchive`. Linking each row into the CORE loan document store is marked TODO in the proc, pending confirmation of the document table or proc.
 
 ### Previewing without the app
 

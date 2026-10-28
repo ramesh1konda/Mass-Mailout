@@ -598,8 +598,8 @@ const App: React.FC = () => {
                   </div>
                   {mailServer?.core?.enabled && (
                     <div className="p-3 rounded-xl text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
-                      CORE: each {mailServer.core.attachDryRuns ? 'email (including dry runs)' : 'sent email'} is stored against its loan in {mailServer.core.server}/{mailServer.core.database}
-                      {mailServer.core.procDryRun ? ' (proc dry run: nothing is written yet).' : '.'}
+                      CORE: each {mailServer.core.attachDryRuns ? 'email (including dry runs)' : 'sent email'} is saved to its loan's documents in {mailServer.core.server}/{mailServer.core.database}
+                      {mailServer.core.procDryRun ? ' (dry run: nothing is written yet).' : '.'}
                     </div>
                   )}
 
@@ -661,7 +661,7 @@ const App: React.FC = () => {
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 border-b"><tr><th className="p-4 text-left">Recipient</th><th className="p-4 text-left">Status</th><th className="p-4 text-left">Subject</th><th className="p-4 text-left">Attachments</th><th className="p-4 text-left">CORE</th></tr></thead>
                   <tbody className="divide-y">{sc.emails.map(e => (
-                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}{e.previewUrl && <a href={e.previewUrl} className="ml-2 text-blue-600 underline font-normal" title="Download the .eml and open it in Outlook">preview .eml</a>}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[10px] px-1 rounded border border-blue-100">{a.name}</span>)}</div></td><td className={`p-4 font-bold ${e.core?.status === 'failed' ? 'text-red-600' : e.core?.status === 'attached' || e.core?.status === 'duplicate' ? 'text-green-600' : 'text-slate-400'}`} title={e.core?.error || e.core?.message}>{e.core ? e.core.status : '-'}</td></tr>
+                    <tr key={e.id}><td className="p-4 font-bold">{e.recipientEmail}</td><td className={`p-4 font-bold ${e.status === 'failed' ? 'text-red-600' : e.status === 'sent' ? 'text-green-600' : 'text-amber-600'}`} title={e.error}>{e.status}{e.previewUrl && <a href={e.previewUrl} className="ml-2 text-blue-600 underline font-normal" title="Download the .eml and open it in Outlook">preview .eml</a>}</td><td className="p-4 text-slate-500">{e.personalizedSubject}</td><td className="p-4"><div className="flex flex-wrap gap-1">{e.attachments.map((a, i) => <span key={i} className="bg-blue-50 text-blue-700 text-[10px] px-1 rounded border border-blue-100">{a.name}</span>)}</div></td><td className={`p-4 font-bold ${e.core?.status === 'failed' ? 'text-red-600' : e.core?.status === 'attached' ? 'text-green-600' : 'text-slate-400'}`} title={e.core?.error || e.core?.message}>{e.core ? e.core.status : '-'}</td></tr>
                   ))}</tbody>
                 </table>
               </div>

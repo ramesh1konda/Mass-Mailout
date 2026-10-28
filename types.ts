@@ -24,7 +24,7 @@ export interface SentEmail {
   status: 'sent' | 'dry-run' | 'failed';
   error?: string;
   previewUrl?: string; // dry runs only: download link for the .eml the server wrote
-  core?: { status: 'attached' | 'dry-run' | 'duplicate' | 'failed'; archiveId?: number | null; message?: string; error?: string }; // copy stored against the loan in CORE
+  core?: { status: 'attached' | 'dry-run' | 'failed'; documentName?: string; message?: string; error?: string }; // copy saved to the loan's documents in CORE
 
 }
 

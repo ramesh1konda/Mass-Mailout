@@ -84,7 +84,7 @@ app.post('/api/send', async (req, res) => {
   // A CORE failure never undoes the send; it is reported per email so it can be followed up
   if (core.appliesTo(result.status)) {
     result.core = await core.archive({ mergeData, eml, fileName, to, subject, sendStatus: result.status, campaign });
-    console.log(`[CORE ${result.core.status.toUpperCase()}] ${to}${result.core.archiveId ? ` | ArchiveID ${result.core.archiveId}` : ''}${result.core.error ? ` | ${result.core.error}` : ''}`);
+    console.log(`[CORE ${result.core.status.toUpperCase()}] ${to} | ${result.core.error || result.core.message}`);
   }
   res.json(result);
 });
@@ -128,7 +128,7 @@ const start = async () => {
   if (core.enabled) {
     const db = await core.verify();
     const { procDryRun, attachDryRuns } = core.info();
-    console.log(`CORE attach ON: ${db.Srv}/${db.Db}${procDryRun ? ' (proc @DryRun = 1, nothing is written)' : ' (WRITING to CORE)'}${attachDryRuns ? ', including dry-run emails' : ', live sends only'}`);
+    console.log(`CORE attach ON: ${db.Srv}/${db.Db}${procDryRun ? ' (dry run: nothing is written)' : ' (WRITING loan documents)'}${attachDryRuns ? ', including dry-run emails' : ', live sends only'}`);
   }
   app.listen(PORT, () => console.log(`Mail server listening on http://localhost:${PORT}`));
 };
