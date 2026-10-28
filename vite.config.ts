@@ -1,3 +1,7 @@
+// AIT-TBC | vite.config.ts | Ramesh Konda | 2026-10-28 | Vite dev/build config; proxies /api to the mail server
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';

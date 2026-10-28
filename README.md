@@ -63,3 +63,19 @@ Safety switches:
 ### Previewing without the app
 
 `npm run dry-run -- <recipients.csv> <campaign.json> [outDir]` writes `emails.json`, `emails.csv`, `preview.html` and one real `.eml` per recipient in `eml/` with every attachment embedded. It flags invalid or duplicate rows, unresolved `{{tags}}` and blank merge values. In `campaign.json`, `attachments` is a list of file paths relative to the JSON file, and `from` is optional (it defaults to `MAIL_FROM`). Try it with `npm run dry-run -- samples/recipients.csv samples/campaign.json`, which attaches a PDF and a CSV from `samples/attachments/`. Add `"template": "<name or id>"` and `"bodyIsHtml": true` to use an Admin template, as in `samples/campaign-html.json`.
+
+## Azure DevOps pipeline
+
+`azure-pipelines.yml` builds and tests the `dev`, `test` and `master` branches, and pull requests into them. Each run does the following:
+1. `npm ci`
+2. Type-check
+3. Vite build
+4. Syntax check of the server
+5. Sample dry run
+6. Mail server smoke test in dry-run mode
+
+The output is published as the artifact `massmailout-Dev`, `-Test` or `-Prod`, depending on the branch. Nothing is deployed, and no email is sent.
+
+To set it up, go to Azure DevOps → Pipelines → **New pipeline** → Azure Repos Git → **Mass Mailout** → **Existing Azure Pipelines YAML file** → `/azure-pipelines.yml`. One pipeline covers all three branches.
+
+Run the same checks locally with `npm run typecheck && npm run build && npm run smoke`.

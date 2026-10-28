@@ -1,3 +1,7 @@
+// AIT-TBC | TemplateAdmin.tsx | Ramesh Konda | 2026-10-28 | Admin tab: HTML email template designer (CSS, header, footer) with live preview
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { EmailTemplate } from '../types';
 import { renderEmailHtml } from '../shared/emailRender.mjs';

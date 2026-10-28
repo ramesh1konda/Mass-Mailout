@@ -1,3 +1,6 @@
+// AIT-TBC | types.ts | Ramesh Konda | 2026-10-28 | Shared TypeScript types for campaigns, recipients, sent emails and templates
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
 
 export interface Recipient {
   id: string;

@@ -1,3 +1,7 @@
+// AIT-TBC | templates.mjs | Ramesh Konda | 2026-10-28 | JSON-file store for Admin email templates (data/templates.json)
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // Email template store: a JSON file on the mail server, edited from the app's Admin tab
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';

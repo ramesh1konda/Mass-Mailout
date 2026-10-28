@@ -1,3 +1,6 @@
+// AIT-TBC | geminiService.ts | Ramesh Konda | 2026-10-28 | Gemini helper that drafts an email subject and body from a campaign goal
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
 
 import { GoogleGenAI, Type } from "@google/genai";
 

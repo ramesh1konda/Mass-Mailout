@@ -1,3 +1,7 @@
+// AIT-TBC | dry-run.mjs | Ramesh Konda | 2026-10-28 | Offline campaign preview: personalised .eml per recipient plus preview.html, sends nothing
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // Dry run: personalises a campaign for every CSV recipient and writes a preview, including one real
 // .eml per recipient with all attachments embedded (open it in Outlook to see exactly what would be sent).
 // Sends nothing. Usage: node scripts/dry-run.mjs <recipients.csv> <campaign.json> [outDir]

@@ -1,3 +1,7 @@
+// AIT-TBC | csv.ts | Ramesh Konda | 2026-10-28 | RFC 4180 CSV parser for recipient uploads (quoted fields, embedded commas)
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // RFC 4180 CSV parser: handles quoted fields with embedded commas, quotes and newlines
 export const parseCsv = (text: string): string[][] => {
   const rows: string[][] = [];

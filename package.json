@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
-    "dry-run": "node scripts/dry-run.mjs"
+    "dry-run": "node scripts/dry-run.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",

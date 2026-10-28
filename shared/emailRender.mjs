@@ -1,3 +1,7 @@
+// AIT-TBC | emailRender.mjs | Ramesh Konda | 2026-10-28 | Merge tags and HTML email rendering shared by the app, mail server and dry-run script
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // Shared by the browser app, the mail server and the dry-run script so previews match what is sent.
 // Plain JS (not TS) so Node can import it without a build step.
 

@@ -1,3 +1,6 @@
+// AIT-TBC | App.tsx | Ramesh Konda | 2026-10-28 | MassMailer Pro main UI: campaign builder, review, history, Admin tab, voice assistant
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Campaign, Recipient, Attachment, Step, SentCampaign, SentEmail, EmailTemplate } from './types';

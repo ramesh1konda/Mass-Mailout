@@ -1,3 +1,7 @@
+// AIT-TBC | index.mjs | Ramesh Konda | 2026-10-28 | Mail server: SMTP relay (dry run by default), .eml previews, template API, CORE save
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // Mail relay for MassMailer Pro. The browser can't speak SMTP, so the app posts each
 // personalised email here and this server hands it to your SMTP provider via nodemailer.
 // Real delivery only happens when SEND_ENABLED=true; otherwise every request is a dry run.

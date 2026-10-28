@@ -1,3 +1,7 @@
+// AIT-TBC | core.mjs | Ramesh Konda | 2026-10-28 | CORE (ARMNet) connector: saves each sent .eml to the loan via dbo.sp_PublishSSRSDocs
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // CORE (ARMNet) connector: after an email is sent, save its .eml to the loan's documents through
 // ARMNet's dbo.sp_PublishSSRSDocs, the same proc the TransmitSMS CLR uses for SMS records
 // (@ownerGUID, @documentName, @base64Doc, @createdBy). Uses its own connection, outside any transaction.

@@ -1,0 +1,80 @@
+# AIT-TBC | azure-pipelines.yml | Ramesh Konda | 2026-10-28 | Build pipeline for Mass Mailout: dev, test and master branches
+# Change log:
+#   2026-10-28 RK AIT-TBC Initial version: type-check, build, dry-run + mail server smoke tests, publish artifact
+
+# One pipeline serves all three branches; the branch decides the environment label:
+#   dev -> Dev, test -> Test, master -> Prod
+# Builds and tests only. Nothing is deployed and no email is ever sent (smoke tests run in dry-run mode).
+
+trigger:
+  branches:
+    include:
+      - dev
+      - test
+      - master
+
+pr:
+  branches:
+    include:
+      - dev
+      - test
+      - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  nodeVersion: '22.x'
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    environmentName: Prod
+  ${{ elseif eq(variables['Build.SourceBranchName'], 'test') }}:
+    environmentName: Test
+  ${{ else }}:
+    environmentName: Dev
+
+name: $(Date:yyyyMMdd)$(Rev:.r) ($(Build.SourceBranchName))
+
+stages:
+  - stage: Build
+    displayName: Build and test ($(environmentName))
+    jobs:
+      - job: Build
+        displayName: Build, type-check and smoke test
+        steps:
+          - task: NodeTool@0
+            displayName: Use Node $(nodeVersion)
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: npm ci
+            displayName: Install dependencies
+
+          - script: npm run typecheck
+            displayName: Type-check (tsc)
+
+          - script: npm run build
+            displayName: Build web app (vite)
+
+          - script: |
+              set -e
+              for f in server/*.mjs shared/*.mjs scripts/*.mjs; do node --check "$f"; done
+            displayName: Syntax-check server and scripts
+
+          - script: npm run dry-run -- samples/recipients.csv samples/campaign.json $(Agent.TempDirectory)/dry-run
+            displayName: Dry-run preview (sample campaign)
+
+          - script: npm run smoke
+            displayName: Mail server smoke test (dry-run mode)
+
+          - script: |
+              set -e
+              mkdir -p $(Build.ArtifactStagingDirectory)/massmailout
+              cp -r dist server shared scripts samples package.json package-lock.json .env.example README.md $(Build.ArtifactStagingDirectory)/massmailout/
+              echo "$(Build.SourceBranchName) $(Build.SourceVersion) $(environmentName)" > $(Build.ArtifactStagingDirectory)/massmailout/BUILD_INFO.txt
+            displayName: Stage artifact
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish artifact massmailout-$(environmentName)
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/massmailout
+              artifact: massmailout-$(environmentName)

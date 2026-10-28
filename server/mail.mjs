@@ -1,3 +1,7 @@
+// AIT-TBC | mail.mjs | Ramesh Konda | 2026-10-28 | Builds the MIME message (.eml) with attachments and inlined CSS; .env.local loader
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
+
 // Shared by the mail server and the dry-run script so a preview is byte-for-byte the email that would be sent
 import { readFileSync, existsSync } from 'node:fs';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
