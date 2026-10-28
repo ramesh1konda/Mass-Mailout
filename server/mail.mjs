@@ -1,6 +1,8 @@
 // Shared by the mail server and the dry-run script so a preview is byte-for-byte the email that would be sent
 import { readFileSync, existsSync } from 'node:fs';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
+import juice from 'juice';
+import { htmlToText } from '../shared/emailRender.mjs';
 
 // Minimal .env.local loader so Node tools share the Vite env file
 export const loadEnvLocal = (file = '.env.local') => {
@@ -12,11 +14,14 @@ export const loadEnvLocal = (file = '.env.local') => {
 };
 
 // attachments: [{ name, base64 }] where base64 may be a data URL ("data:<mime>;base64,<data>")
-export const buildMailOptions = ({ from, to, subject, text, attachments = [] }) => ({
+// html (optional): full HTML document. Its <style> rules are inlined because Outlook and many
+// webmail clients ignore or strip <head> styles; a plain-text part is derived when text is missing.
+export const buildMailOptions = ({ from, to, subject, text, html, attachments = [] }) => ({
   from,
   to,
   subject,
-  text,
+  text: text || (html ? htmlToText(html) : ''),
+  ...(html ? { html: juice(html) } : {}),
   attachments: attachments.map(a => ({
     filename: a.name,
     content: String(a.base64).replace(/^data:[^,]*,/, ''),

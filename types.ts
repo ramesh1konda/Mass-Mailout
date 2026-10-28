@@ -45,6 +45,17 @@ export interface Campaign {
   status: 'draft' | 'sending' | 'completed';
   createdAt: number;
   headers: string[]; // Track available CSV columns for merge tags
+  templateId: string | null; // null = plain-text email, no template
+  bodyIsHtml: boolean;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  css: string;
+  headerHtml: string;
+  footerHtml: string;
+  updatedAt?: number;
 }
 
 export type Step = 'info' | 'recipients' | 'content' | 'attachments' | 'review';

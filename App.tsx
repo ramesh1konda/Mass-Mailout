@@ -1,9 +1,11 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Campaign, Recipient, Attachment, Step, SentCampaign, SentEmail } from './types';
+import { Campaign, Recipient, Attachment, Step, SentCampaign, SentEmail, EmailTemplate } from './types';
 import { generateEmailTemplate } from './services/geminiService';
 import CampaignSteps from './components/CampaignSteps';
 import { parseCsv } from './utils/csv';
+import TemplateAdmin from './components/TemplateAdmin';
+import { personalize as mergeFields, renderEmailHtml } from './shared/emailRender.mjs';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, Blob } from '@google/genai';
 
 // Audio Helpers as per guidelines
@@ -46,7 +48,8 @@ async function decodeAudioData(
 }
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'builder' | 'history'>('builder');
+  const [view, setView] = useState<'builder' | 'history' | 'admin'>('builder');
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [currentStep, setCurrentStep] = useState<Step>('info');
   const [campaign, setCampaign] = useState<Campaign>({
     id: crypto.randomUUID(),
@@ -58,6 +61,8 @@ const App: React.FC = () => {
     status: 'draft',
     createdAt: Date.now(),
     headers: [],
+    templateId: null,
+    bodyIsHtml: false,
   });
 
   const [sentCampaigns, setSentCampaigns] = useState<SentCampaign[]>([]);
@@ -92,12 +97,12 @@ const App: React.FC = () => {
   }, []);
 
   // batch = { id, index } groups a launch's dry-run previews into one folder on the mail server
-  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>, batch: { id: string; index: number }): Promise<SentEmail> => {
+  const deliver = async (email: Omit<SentEmail, 'status' | 'error'>, batch: { id: string; index: number }, html?: string): Promise<SentEmail> => {
     try {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: email.personalizedBody, attachments: email.attachments, campaign: campaign.name || 'campaign', batchId: batch.id, index: batch.index }),
+        body: JSON.stringify({ to: email.recipientEmail, subject: email.personalizedSubject, text: html ? undefined : email.personalizedBody, html, attachments: email.attachments, campaign: campaign.name || 'campaign', batchId: batch.id, index: batch.index }),
       });
       const data = await res.json().catch(() => ({ status: 'failed', error: `HTTP ${res.status}` }));
       return { ...email, status: data.status === 'sent' || data.status === 'dry-run' ? data.status : 'failed', error: data.error, previewUrl: data.preview, sentAt: Date.now() };
@@ -124,15 +129,19 @@ const App: React.FC = () => {
     });
   };
 
-  const personalize = (text: string, recipient: Recipient) => {
-    if (!text) return '';
-    let personalized = text;
-    Object.keys(recipient).forEach(key => {
-      const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, 'gi');
-      personalized = personalized.replace(placeholder, String(recipient[key] || ''));
-    });
-    return personalized;
-  };
+  // {{column}} and @Field(column) merge tags; see shared/emailRender.mjs
+  const personalize = (text: string, recipient: Recipient) => mergeFields(text, recipient);
+
+  const selectedTemplate = templates.find(t => t.id === campaign.templateId) || null;
+  const isHtmlEmail = !!selectedTemplate || campaign.bodyIsHtml;
+  // Full HTML document for one recipient, or undefined for a plain-text email
+  const buildHtml = (recipient: Recipient) => isHtmlEmail
+    ? renderEmailHtml({ template: selectedTemplate, body: campaign.body, bodyIsHtml: campaign.bodyIsHtml, data: recipient })
+    : undefined;
+
+  const loadTemplates = () =>
+    fetch('/api/templates').then(r => r.ok ? r.json() : []).then(setTemplates).catch(() => setTemplates([]));
+  useEffect(() => { loadTemplates(); }, []);
 
   const resetCampaign = () => {
     stopLiveSession();
@@ -146,6 +155,8 @@ const App: React.FC = () => {
       status: 'draft',
       createdAt: Date.now(),
       headers: [],
+    templateId: null,
+    bodyIsHtml: false,
     });
     setCurrentStep('info');
     setSendProgress(0);
@@ -384,7 +395,7 @@ const App: React.FC = () => {
         personalizedBody: personalize(campaign.body, recipient),
         attachments: processedAttachments,
         sentAt: Date.now()
-      }, { id: `test-${Date.now()}`, index: 0 });
+      }, { id: `test-${Date.now()}`, index: 0 }, buildHtml(recipient));
       setTransmissionLog(prev => [...prev, logResult(generatedEmail)]);
 
       setSentCampaigns(prev => [{ id: crypto.randomUUID(), name: `${campaign.name} (Single)`, emails: [generatedEmail], totalRecipients: 1, createdAt: Date.now() }, ...prev]);
@@ -420,7 +431,7 @@ const App: React.FC = () => {
           personalizedBody: personalize(campaign.body, recipient),
           attachments: processedAttachments,
           sentAt: Date.now()
-        }, { id: batchId, index: i });
+        }, { id: batchId, index: i }, buildHtml(recipient));
 
         generatedEmails.push(email);
         setSendProgress(progress);
@@ -446,8 +457,11 @@ const App: React.FC = () => {
           <p className="text-slate-500 font-medium italic">Advanced Real-time Personalization</p>
         </div>
         <div className="flex items-center gap-3">
-           <button onClick={() => setView(view === 'builder' ? 'history' : 'builder')} className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 border ${view === 'history' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'}`}>
+           <button onClick={() => setView(view === 'history' ? 'builder' : 'history')} className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 border ${view === 'history' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'}`}>
              <i className={`fas ${view === 'history' ? 'fa-pen-nib' : 'fa-history'}`}></i> {view === 'history' ? 'Campaign Builder' : 'View History'}
+           </button>
+           <button onClick={() => { setView(view === 'admin' ? 'builder' : 'admin'); loadTemplates(); }} className={`px-4 py-2 rounded-lg font-semibold transition-all flex items-center gap-2 border ${view === 'admin' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'}`}>
+             <i className={`fas ${view === 'admin' ? 'fa-pen-nib' : 'fa-cog'}`}></i> {view === 'admin' ? 'Campaign Builder' : 'Admin'}
            </button>
            <button onClick={resetCampaign} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-all shadow-md flex items-center gap-2">
              <i className="fas fa-plus"></i> New Campaign
@@ -464,7 +478,9 @@ const App: React.FC = () => {
       </div>
 
       <main className="w-full max-w-5xl">
-        {view === 'builder' ? (
+        {view === 'admin' ? (
+          <TemplateAdmin templates={templates} serverOnline={!!mailServer} onSaved={loadTemplates} />
+        ) : view === 'builder' ? (
           <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
             <div className="p-6 md:p-10">
               <CampaignSteps currentStep={currentStep} />
@@ -500,11 +516,25 @@ const App: React.FC = () => {
               {currentStep === 'content' && (
                 <div className="space-y-6">
                   <h2 className="text-2xl font-bold text-slate-800">Template Editor</h2>
+                  <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-50 border rounded-xl">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                      Design template
+                      <select className="px-3 py-2 rounded-lg border bg-white" value={campaign.templateId || ''} onChange={(e) => setCampaign({ ...campaign, templateId: e.target.value || null })}>
+                        <option value="">None (plain text email)</option>
+                        {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                      <input type="checkbox" checked={campaign.bodyIsHtml} onChange={(e) => setCampaign({ ...campaign, bodyIsHtml: e.target.checked })} />
+                      Body is HTML
+                    </label>
+                    <button onClick={() => { setView('admin'); loadTemplates(); }} className="text-xs font-bold text-blue-600 hover:underline">Edit templates in Admin</button>
+                  </div>
                   <div className="p-4 bg-slate-50 border rounded-xl flex flex-wrap gap-2">
                     {campaign.headers.map(h => <button key={h} onClick={() => setCampaign(prev => ({ ...prev, body: prev.body + ` {{${h}}}` }))} className="px-2 py-1 bg-white border rounded text-[10px] font-bold text-blue-600 hover:bg-blue-50">Insert {`{{${h}}}`}</button>)}
                   </div>
                   <input type="text" placeholder="Subject" className="w-full px-4 py-3 rounded-lg border font-semibold" value={campaign.subject} onChange={(e) => setCampaign({ ...campaign, subject: e.target.value })} />
-                  <textarea rows={8} placeholder="Body..." className="w-full px-4 py-3 rounded-lg border font-mono text-sm" value={campaign.body} onChange={(e) => setCampaign({ ...campaign, body: e.target.value })}></textarea>
+                  <textarea rows={8} placeholder={campaign.bodyIsHtml ? '<p>Dear @Field(name)</p>\n<p>Please find attached...</p>' : 'Body...'} className="w-full px-4 py-3 rounded-lg border font-mono text-sm" value={campaign.body} onChange={(e) => setCampaign({ ...campaign, body: e.target.value })}></textarea>
                 </div>
               )}
 
@@ -579,7 +609,17 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {!isSending && !isSendingSingle && (
+                  {!isSending && !isSendingSingle && isHtmlEmail && (
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                      <div className="p-4 bg-slate-50 border-b">
+                        <p className="text-sm font-bold text-slate-400 uppercase">Preview for {campaign.recipients[0]?.name || 'User'}{selectedTemplate ? ` · ${selectedTemplate.name} template` : ''}</p>
+                        <p className="font-bold text-lg text-slate-800">{personalize(campaign.subject, campaign.recipients[0] || {} as any)}</p>
+                      </div>
+                      <iframe title="Email preview" sandbox="" srcDoc={buildHtml(campaign.recipients[0] || {} as any)} className="w-full h-[520px] bg-white" />
+                    </div>
+                  )}
+
+                  {!isSending && !isSendingSingle && !isHtmlEmail && (
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200">
                       <p className="text-sm font-bold text-slate-400 mb-2 uppercase">Preview for {campaign.recipients[0]?.name || 'User'}</p>
                       <p className="font-bold mb-2 text-lg text-slate-800">{personalize(campaign.subject, campaign.recipients[0] || {} as any)}</p>

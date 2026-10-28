@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadEnvLocal, buildMailOptions, buildEml, safeName } from './mail.mjs';
+import { createTemplateStore } from './templates.mjs';
 
 loadEnvLocal();
 
@@ -16,6 +17,7 @@ const SEND_DELAY_MS = Number(env.SEND_DELAY_MS || 1000); // min gap between send
 const FROM = env.MAIL_FROM || env.SMTP_USER;
 // Dry runs write each email as a real .eml (with attachments) here, one folder per batch
 const PREVIEW_DIR = resolve(env.DRY_RUN_DIR || 'dry-run-output');
+const templates = createTemplateStore(resolve(env.TEMPLATES_FILE || 'data/templates.json'));
 
 const transporter = SEND_ENABLED
   ? nodemailer.createTransport({
@@ -42,11 +44,11 @@ app.get('/api/status', (_req, res) => {
 });
 
 app.post('/api/send', async (req, res) => {
-  const { to, subject, text, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0 } = req.body || {};
+  const { to, subject, text, html, attachments = [], campaign = 'campaign', batchId = 'batch', index = 0 } = req.body || {};
   if (!emailRe.test(to || '')) return res.status(400).json({ status: 'failed', error: `Invalid recipient: ${to}` });
   if (!subject) return res.status(400).json({ status: 'failed', error: 'Subject is required' });
 
-  const options = buildMailOptions({ from: FROM || 'dry-run@localhost', to, subject, text, attachments });
+  const options = buildMailOptions({ from: FROM || 'dry-run@localhost', to, subject, text, html, attachments });
 
   if (!SEND_ENABLED) {
     try {
@@ -71,6 +73,17 @@ app.post('/api/send', async (req, res) => {
     console.error(`[FAILED] ${to} | ${err.message}`);
     res.status(502).json({ status: 'failed', error: err.message });
   }
+});
+
+// Email templates (Admin tab)
+app.get('/api/templates', (_req, res) => res.json(templates.list()));
+app.post('/api/templates', (req, res) => res.status(201).json(templates.create(req.body || {})));
+app.put('/api/templates/:id', (req, res) => {
+  const t = templates.update(req.params.id, req.body || {});
+  t ? res.json(t) : res.status(404).json({ error: 'Template not found' });
+});
+app.delete('/api/templates/:id', (req, res) => {
+  templates.remove(req.params.id) ? res.status(204).end() : res.status(404).json({ error: 'Template not found' });
 });
 
 // Download a dry-run .eml; double-click it to open in Outlook/Mail exactly as the recipient would see it

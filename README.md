@@ -31,6 +31,20 @@ The browser can't send email itself, so a small mail server (`server/index.mjs`,
 
 CSV uploads skip rows with invalid or duplicate emails, and quoted fields (e.g. `"Acme, Inc."`) are parsed correctly. History shows each email's status: sent, dry-run, or failed.
 
+### HTML email templates (Admin)
+
+Click **Admin** in the header to design reusable email templates. Each one has:
+
+- **Styles (CSS)**, e.g. `body { font-family: calibri, arial, sans-serif; }`
+- **Header (HTML)**, e.g. a logo `<img src="https://...">`
+- **Footer (HTML)**, e.g. "Regards," and a footer banner image
+
+A live preview updates as you type. Templates are saved by the mail server in `data/templates.json`, which git ignores (change the path with `TEMPLATES_FILE`).
+
+In the campaign's Template step, pick a **Design template** and tick **Body is HTML** if the body contains HTML. The email is sent as HTML with a plain-text fallback, and the CSS is inlined into each element so that Outlook and Gmail keep the styling. Images must use public `https://` URLs.
+
+Merge fields work in the subject, body, header and footer, written as either `{{column}}` or `@Field(column)`. They are matched to CSV column names case-insensitively, and merged values are HTML-escaped.
+
 ### Previewing without the app
 
-`npm run dry-run -- <recipients.csv> <campaign.json> [outDir]` writes `emails.json`, `emails.csv`, `preview.html` and one real `.eml` per recipient in `eml/` with every attachment embedded. It flags invalid or duplicate rows, unresolved `{{tags}}` and blank merge values. In `campaign.json`, `attachments` is a list of file paths relative to the JSON file, and `from` is optional (it defaults to `MAIL_FROM`). Try it with `npm run dry-run -- samples/recipients.csv samples/campaign.json`, which attaches a PDF and a CSV from `samples/attachments/`.
+`npm run dry-run -- <recipients.csv> <campaign.json> [outDir]` writes `emails.json`, `emails.csv`, `preview.html` and one real `.eml` per recipient in `eml/` with every attachment embedded. It flags invalid or duplicate rows, unresolved `{{tags}}` and blank merge values. In `campaign.json`, `attachments` is a list of file paths relative to the JSON file, and `from` is optional (it defaults to `MAIL_FROM`). Try it with `npm run dry-run -- samples/recipients.csv samples/campaign.json`, which attaches a PDF and a CSV from `samples/attachments/`. Add `"template": "<name or id>"` and `"bodyIsHtml": true` to use an Admin template, as in `samples/campaign-html.json`.
