@@ -1,0 +1,6 @@
+Email,Name,Company,City
+jane.doe@example.com,Jane Doe,"Acme, Inc.",Sydney
+john.smith@example.com,John Smith,Globex,Melbourne
+JANE.DOE@example.com,Jane Duplicate,Acme,Sydney
+not-an-email,Bad Row,Nowhere,Perth
+priya.k@example.com,Priya K,Initech,

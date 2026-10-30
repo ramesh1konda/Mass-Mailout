@@ -1,3 +1,6 @@
+// AIT-TBC | CampaignSteps.tsx | Ramesh Konda | 2026-10-28 | Campaign builder step indicator (info, recipients, content, attachments, review)
+// Change log:
+//   2026-10-28 RK AIT-TBC Initial version
 
 import React from 'react';
 import { Step } from '../types';

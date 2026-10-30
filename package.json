@@ -6,11 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.mjs",
+    "dry-run": "node scripts/dry-run.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "smoke": "node scripts/smoke-test.mjs",
+    "check-config": "node scripts/check-config.mjs"
   },
   "dependencies": {
-    "react": "^19.2.4",
     "@google/genai": "^1.40.0",
+    "express": "^4.22.3",
+    "juice": "^11.1.1",
+    "mssql": "^11.0.2",
+    "nodemailer": "^6.10.1",
+    "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
@@ -18,5 +27,8 @@
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "optionalDependencies": {
+    "msnodesqlv8": "^4.5.0"
   }
 }

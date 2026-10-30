@@ -1,0 +1,8 @@
+{
+  "name": "Sample HTML Notice",
+  "template": "Default",
+  "bodyIsHtml": true,
+  "subject": "Your Q4 update, {{name}}",
+  "body": "<p>Dear @Field(name)</p>\n<p>Please find attached your Q4 brochure and price list for {{company}}.</p>\n<p class=\"smaller\">Questions? Email <a href=\"mailto:support@example.com\">support@example.com</a>.</p>",
+  "attachments": ["attachments/Q4-brochure.pdf", "attachments/price-list.csv"]
+}
